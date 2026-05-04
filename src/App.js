@@ -4,7 +4,6 @@ import {
   supabase, signIn, signOut, onAuthChange,
   fetchGames, upsertGame, deleteGame,
   fetchTeams, upsertTeam, deleteTeam,
-  loadGamesLocal, saveGamesLocal, teamsLSKey,
   adminListUsers, adminInviteUser, adminResetPassword, adminToggleBan,
 } from './supabase';
 
@@ -13,6 +12,7 @@ const PERIOD_TIME = 20 * 60;  // 20 min
 const OT_TIME     = 5  * 60;  // 5 min prorrogação
 const FOUL_BONUS  = 6;        // 6ª falta = tiro livre direto
 const POSITIONS   = ['Goleiro','Fixo','Ala Direito','Ala Esquerdo','Pivô','Universal'];
+const teamsLSKey  = (uid) => uid ? `futsal_teams_${uid}` : 'futsal_teams';
 
 const getQuarterLabel = q => q === 0 ? '1T' : q === 1 ? '2T' : `PT${q - 1}`;
 const fmtTime = s => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
