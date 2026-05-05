@@ -104,7 +104,7 @@ function exportZoneCSV(game){
 // Quadra FIFA: 40x20m — mostramos metade ofensiva (20x20m)
 // SVG: 300x280px — zonas Z7/Z8/Z9 = linha ofensiva (perto do gol)
 //                   Z1/Z2/Z3 = linha defensiva do lado ofensivo (meio campo)
-function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null}){
+function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null, interactive=true}){
   const zoneCounts={};
   ZONES.forEach(z=>{
     const filtered=highlightType?events.filter(e=>e.zone===z.id&&e.type===highlightType):events.filter(e=>e.zone===z.id);
@@ -130,7 +130,7 @@ function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null}){
   return(
     <div className="zone-map">
       <svg viewBox={`0 0 ${W} ${H}`} className="halfcourt-svg"
-        style={{width:'100%',maxWidth:`${W}px`,display:'block'}}>
+        style={{width:'100%',maxWidth:`${W}px`,display:'block',cursor:interactive?'pointer':'default'}}>
 
         {/* ── Fundo da meia quadra ── */}
         <rect width={W} height={H} fill="#1a2a1a" rx="4"/>
@@ -183,7 +183,7 @@ function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null}){
                   fill="rgba(250,233,42,0.18)" stroke="#fae92a" strokeWidth="2" rx="2"/>
               )}
               {/* Hit area invisível */}
-              <rect x={pos.x} y={pos.y} width={colW} height={rowH} fill="transparent"/>
+              <rect x={pos.x} y={pos.y} width={colW} height={rowH} fill="transparent" style={{cursor:interactive?'pointer':'default'}}/>
               {/* Label da zona */}
               <text x={pos.x+colW/2} y={pos.y+rowH/2-6}
                 fill={isActive?'#fae92a':'rgba(255,255,255,0.5)'}
@@ -363,6 +363,142 @@ function HeatMapPanel({events, teams, myTeam}){
   );
 }
 
+// ─── StatsPanel ──────────────────────────────────────────────────────────────
+function StatsPanel({game}){
+  const evs=game.events||[];
+  const myTeam=game.teams[game.myTeam];
+
+  // Stats por jogador (baseado em playerIdx dos eventos)
+  const playerStats={};
+  myTeam.players.forEach((p,i)=>{
+    playerStats[i]={fins:0,gols:0,perdas:0,recups:0,faltas:0};
+  });
+  evs.forEach(e=>{
+    if(e.playerIdx!==null&&e.playerIdx!==undefined&&playerStats[e.playerIdx]){
+      const ps=playerStats[e.playerIdx];
+      if(e.type==='fin'){ps.fins++;if(e.result==='gol')ps.gols++;}
+      if(e.type==='perda')ps.perdas++;
+      if(e.type==='recup')ps.recups++;
+      if(e.type==='falta')ps.faltas++;
+    }
+  });
+
+  // Stats por zona
+  const zoneStats={};
+  ZONES.forEach(z=>{
+    const zEvs=evs.filter(e=>e.zone===z.id);
+    const fins=zEvs.filter(e=>e.type==='fin');
+    const gols=fins.filter(e=>e.result==='gol');
+    zoneStats[z.id]={fins:fins.length,gols:gols.length,perdas:zEvs.filter(e=>e.type==='perda').length,recups:zEvs.filter(e=>e.type==='recup').length};
+  });
+
+  // Totais gerais
+  const fins=evs.filter(e=>e.type==='fin');
+  const gols=fins.filter(e=>e.result==='gol');
+  const perdas=evs.filter(e=>e.type==='perda');
+  const recups=evs.filter(e=>e.type==='recup');
+  const faltas=evs.filter(e=>e.type==='falta');
+  const efi=fins.length>0?Math.round(gols.length/fins.length*100):0;
+
+  return(
+    <div className="stats-panel">
+      {/* Resumo geral */}
+      <div className="stats-summary-grid">
+        <div className="stats-sum-card" style={{'--sc':'#22c55e'}}>
+          <span className="ssc-val">{fins.length}</span>
+          <span className="ssc-label">Finalizações</span>
+          <span className="ssc-sub">{gols.length} gols · {efi}%</span>
+        </div>
+        <div className="stats-sum-card" style={{'--sc':'#ef4444'}}>
+          <span className="ssc-val">{perdas.length}</span>
+          <span className="ssc-label">Perdas</span>
+          <span className="ssc-sub">{evs.filter(e=>e.type==='perda'&&e.result==='pressionada').length} press. / {evs.filter(e=>e.type==='perda'&&e.result==='nao_forcada').length} livres</span>
+        </div>
+        <div className="stats-sum-card" style={{'--sc':'#3b82f6'}}>
+          <span className="ssc-val">{recups.length}</span>
+          <span className="ssc-label">Recuperações</span>
+          <span className="ssc-sub">{evs.filter(e=>e.type==='recup'&&e.result==='alta').length} altas · {evs.filter(e=>e.type==='recup'&&e.result==='baixa').length} baixas</span>
+        </div>
+        <div className="stats-sum-card" style={{'--sc':'#f59e0b'}}>
+          <span className="ssc-val">{faltas.length}</span>
+          <span className="ssc-label">Faltas</span>
+          <span className="ssc-sub">{evs.filter(e=>e.type==='falta'&&e.result==='sofrida').length} sof. / {evs.filter(e=>e.type==='falta'&&e.result==='cometida').length} com.</span>
+        </div>
+      </div>
+
+      {/* Stats por zona */}
+      <div className="stats-section-title">Por Zona</div>
+      <div className="stats-zone-table">
+        <div className="szt-header">
+          <span>Zona</span><span>FIN</span><span>GOL</span><span>EFI</span><span>PERD</span><span>REC</span>
+        </div>
+        {ZONES.filter(z=>Object.values(zoneStats[z.id]).some(v=>v>0)).map(z=>{
+          const zs=zoneStats[z.id];
+          const zefi=zs.fins>0?Math.round(zs.gols/zs.fins*100):0;
+          return(
+            <div key={z.id} className="szt-row">
+              <span className="szt-zone">{z.id}<span className="szt-zone-name"> {ZONE_LABELS[z.id]}</span></span>
+              <span>{zs.fins}</span>
+              <span style={{color:'#22c55e',fontWeight:700}}>{zs.gols}</span>
+              <span style={{color:zefi>=40?'#22c55e':zefi>0?'#f59e0b':'var(--muted)'}}>{zs.fins>0?`${zefi}%`:'—'}</span>
+              <span style={{color:zs.perdas>0?'#ef4444':'var(--muted)'}}>{zs.perdas||'—'}</span>
+              <span style={{color:zs.recups>0?'#3b82f6':'var(--muted)'}}>{zs.recups||'—'}</span>
+            </div>
+          );
+        })}
+        {ZONES.every(z=>Object.values(zoneStats[z.id]).every(v=>v===0))&&(
+          <div style={{color:'var(--muted)',textAlign:'center',padding:'16px',fontSize:'13px'}}>Nenhum evento registrado.</div>
+        )}
+      </div>
+
+      {/* Stats por jogador */}
+      {myTeam.players.some((_,i)=>Object.values(playerStats[i]).some(v=>v>0))&&(
+        <>
+          <div className="stats-section-title">Por Jogador</div>
+          <div className="stats-zone-table">
+            <div className="szt-header">
+              <span>Jogador</span><span>FIN</span><span>GOL</span><span>PERD</span><span>REC</span><span>FAL</span>
+            </div>
+            {myTeam.players.map((p,i)=>{
+              const ps=playerStats[i];
+              if(Object.values(ps).every(v=>v===0))return null;
+              return(
+                <div key={i} className="szt-row">
+                  <span className="szt-zone">#{p.number}<span className="szt-zone-name"> {p.name.split(' ')[0]}</span></span>
+                  <span>{ps.fins||'—'}</span>
+                  <span style={{color:'#22c55e',fontWeight:700}}>{ps.gols||'—'}</span>
+                  <span style={{color:ps.perdas>0?'#ef4444':'var(--muted)'}}>{ps.perdas||'—'}</span>
+                  <span style={{color:ps.recups>0?'#3b82f6':'var(--muted)'}}>{ps.recups||'—'}</span>
+                  <span style={{color:ps.faltas>0?'#f59e0b':'var(--muted)'}}>{ps.faltas||'—'}</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Estado numérico durante o jogo */}
+      {evs.filter(e=>e.numeric&&e.numeric!=='normal').length>0&&(
+        <>
+          <div className="stats-section-title">Situações Numéricas</div>
+          <div style={{display:'flex',gap:'8px',flexWrap:'wrap',padding:'0 0 8px'}}>
+            {['my_up','opp_up'].map(state=>{
+              const sEvs=evs.filter(e=>e.numeric===state);
+              const sfins=sEvs.filter(e=>e.type==='fin');const sgols=sfins.filter(e=>e.result==='gol');
+              return(
+                <div key={state} className="stats-sum-card" style={{'--sc':state==='my_up'?'#22c55e':'#ef4444',flex:'1',minWidth:'120px'}}>
+                  <span className="ssc-label">{state==='my_up'?'5×4 (Meu +1)':'4×5 (Adv +1)'}</span>
+                  <span className="ssc-sub">{sEvs.length} eventos · {sfins.length} fin · {sgols.length}⚽</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── LogPanel ─────────────────────────────────────────────────────────────────
 function LogPanel({events, onUndo}){
   return(
@@ -394,46 +530,36 @@ function LogPanel({events, onUndo}){
 }
 
 // ─── ScoutPanel — painel principal de registro ────────────────────────────────
-// Fluxo: Evento → Zona → Resultado → (Jogador opcional)
-function ScoutPanel({game, running, onAddEvent, onAddGoal, onAddGoalAdv}){
-  const [step,setStep]   = useState('event');   // event|zone|result|player
-  const [pending,setPending] = useState(null);  // {type, zone, result}
+function ScoutPanel({game, running, onAddEvent, onAddGoal, onAddGoalAdv, onUndo}){
+  const [step,setStep]   = useState('event');
+  const [pending,setPending] = useState(null);
 
   const myTeam=game.teams[game.myTeam];
+  const lastEvent=game.events.length>0?game.events[game.events.length-1]:null;
 
   const reset=()=>{setStep('event');setPending(null);};
-
-  const onEvent=ev=>{
-    setPending({type:ev.id});
-    setStep('zone');
-  };
-
-  const onZone=zoneId=>{
-    setPending(p=>({...p,zone:zoneId}));
-    setStep('result');
-  };
-
-  const onResult=resId=>{
-    setPending(p=>({...p,result:resId}));
-    setStep('player');
-  };
-
+  const onEvent=ev=>{setPending({type:ev.id});setStep('zone');};
+  const onZone=zoneId=>{setPending(p=>({...p,zone:zoneId}));setStep('result');};
+  const onResult=resId=>{setPending(p=>({...p,result:resId}));setStep('player');};
   const onPlayer=player=>{
     const ev={
       ...pending,
-      quarter:getQL(game.quarter),
-      time:fmtTime(game.clock),
-      numeric:game.numeric,
+      quarter:getQL(game.quarter),time:fmtTime(game.clock),numeric:game.numeric,
       playerName:player?`#${player.number} ${player.name.split(' ')[0]}`:'',
       playerIdx:player?myTeam.players.indexOf(player):null,
     };
-    // Gol: incrementa placar
     if(ev.type==='fin'&&ev.result==='gol') onAddGoal(ev);
     else onAddEvent(ev);
     reset();
   };
-
   const results=pending?.type?RESULTS[pending.type]:[];
+
+  // Monta label da última ação para exibir na coluna direita
+  const lastLabel=lastEvent?(()=>{
+    const ev=EVENTS.find(e=>e.id===lastEvent.type);
+    const res=RESULTS[lastEvent.type]?.find(r=>r.id===lastEvent.result);
+    return `${ev?.emoji||''} ${lastEvent.zone} ${res?.label||''}`;
+  })():null;
 
   return(
     <div className="scout-panel">
@@ -448,7 +574,6 @@ function ScoutPanel({game, running, onAddEvent, onAddGoal, onAddGoalAdv}){
             <span className="ev-label">{ev.label}</span>
           </button>
         ))}
-        {/* Gol adversário (placar apenas, sem análise) */}
         <button className="event-btn gol-adv-btn"
           disabled={step!=='event'}
           onClick={()=>onAddGoalAdv()}>
@@ -457,23 +582,23 @@ function ScoutPanel({game, running, onAddEvent, onAddGoal, onAddGoalAdv}){
         </button>
       </div>
 
-      {/* Coluna central — zona */}
+      {/* Coluna central — quadra SEMPRE visível */}
       <div className="scout-col scout-zone-col">
         <div className="scout-step-label">
-          {step==='event'&&'Selecione o evento'}
-          {step==='zone'&&`${EVENTS.find(e=>e.id===pending?.type)?.label} — onde?`}
-          {step==='result'&&`${EVENTS.find(e=>e.id===pending?.type)?.label} em ${pending?.zone}`}
+          {step==='event'&&'Quadra (3×3) — selecione um evento'}
+          {step==='zone'&&`${EVENTS.find(e=>e.id===pending?.type)?.label} — toque na zona`}
+          {step==='result'&&`${EVENTS.find(e=>e.id===pending?.type)?.label} em ${pending?.zone} — resultado`}
           {step==='player'&&'Quem? (opcional)'}
         </div>
 
-        {(step==='zone'||step==='result'||step==='player')&&(
-          <ZoneMap
-            events={game.events}
-            onSelect={step==='zone'?onZone:()=>{}}
-            activeZone={pending?.zone}
-            highlightType={pending?.type}
-          />
-        )}
+        {/* Quadra sempre renderizada */}
+        <ZoneMap
+          events={game.events}
+          onSelect={step==='zone'?onZone:()=>{}}
+          activeZone={pending?.zone}
+          highlightType={pending?.type}
+          interactive={step==='zone'}
+        />
 
         {step==='player'&&(
           <PlayerOverlay
@@ -483,14 +608,30 @@ function ScoutPanel({game, running, onAddEvent, onAddGoal, onAddGoalAdv}){
           />
         )}
 
-        {/* Cancelar */}
         {step!=='event'&&(
           <button className="cancel-flow-btn" onClick={reset}>✕ Cancelar</button>
         )}
       </div>
 
-      {/* Coluna direita — resultado */}
+      {/* Coluna direita — resultado + undo + última ação */}
       <div className="scout-col scout-results">
+        {/* Botão undo sempre visível no topo da coluna */}
+        <button className="result-undo-btn" onClick={onUndo} disabled={game.events.length===0}>
+          ↩ Desfazer
+        </button>
+
+        {/* Última ação registrada */}
+        {lastLabel&&(
+          <div className="last-action-box">
+            <div className="last-action-label">Último</div>
+            <div className="last-action-val">{lastLabel}</div>
+            {lastEvent?.playerName&&<div className="last-action-player">{lastEvent.playerName}</div>}
+          </div>
+        )}
+
+        <div className="results-divider"/>
+
+        {/* Botões de resultado (dinâmicos) */}
         {step==='result'&&results.map(r=>(
           <button key={r.id} className="result-btn"
             style={{'--rc':r.color}}
@@ -498,16 +639,18 @@ function ScoutPanel({game, running, onAddEvent, onAddGoal, onAddGoalAdv}){
             {r.label}
           </button>
         ))}
-        {step==='event'&&(
+
+        {(step==='event'||step==='zone')&&(
           <div className="results-placeholder">
-            <span>← Resultado</span>
-            <span>aparece aqui</span>
+            <span>Selecione</span>
+            <span>um evento</span>
           </div>
         )}
-        {step==='zone'&&(
+
+        {step==='player'&&(
           <div className="results-placeholder">
-            <span>← Selecione</span>
-            <span>a zona</span>
+            <span>Selecione</span>
+            <span>o jogador</span>
           </div>
         )}
       </div>
@@ -898,7 +1041,7 @@ export default function App(){
           <button className="undo-hdr-btn" onClick={undoLast} title="Desfazer">↩</button>
         </div>
         <nav className="nav">
-          {[['scout','Scout'],['heatmap','Mapa'],['log','Log']].map(([v,l])=>(
+          {[['scout','Scout'],['stats','Stats'],['heatmap','Mapa'],['log','Log']].map(([v,l])=>(
             <button key={v} className="nav-btn" data-active={view===v} onClick={()=>setView(v)}>{l}</button>
           ))}
         </nav>
@@ -912,10 +1055,14 @@ export default function App(){
             running={running}
             onAddEvent={addEvent}
             onAddGoal={addGoal}
-            onAddGoalAdv={addGoalAdv}/>
+            onAddGoalAdv={addGoalAdv}
+            onUndo={undoLast}/>
           <MetricsBar metrics={metrics}/>
         </>
       )}
+
+      {/* ── STATS ── */}
+      {view==='stats'&&<StatsPanel game={game}/>}
 
       {/* ── HEATMAP ── */}
       {view==='heatmap'&&<HeatMapPanel events={game.events||[]} teams={game.teams} myTeam={game.myTeam}/>}
