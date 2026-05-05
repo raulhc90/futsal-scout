@@ -100,10 +100,11 @@ function exportZoneCSV(game){
   dl(lines.join('\n'),`futsal_zonas_${d.replace(/\//g,'-')}.csv`);
 }
 
-// ─── ZoneMap — meia quadra FIFA ─────────────────────────────────────────────
-// Quadra FIFA futsal: 40×20m | SVG 300×260 landscape (width=300, height=260)
-// Orientação: meio campo no TOPO, gol na PARTE INFERIOR
-// Proporção: 1m ≈ 13px (largura), 1m ≈ 13px (altura) → metade = 20×20m
+// ─── ZoneMap — meia quadra FIFA correta ──────────────────────────────────────
+// GOL no TOPO, MEIO CAMPO embaixo — vista de cima, 2D
+// Proporcional: 20m wide × 20m tall (metade da quadra 40x20m)
+// SVG: W=300, H=260
+// Escala: 1m = W/20 = 15px (horizontal), 1m = H/20 = 13px (vertical)
 function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null, interactive=true}){
   const W=300, H=260;
   const colW=W/3, rowH=H/3;
@@ -119,88 +120,76 @@ function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null, inte
   const typeColor={fin:'#22c55e',perda:'#ef4444',recup:'#3b82f6',falta:'#f59e0b'};
   const heatColor=highlightType?typeColor[highlightType]:'#fae92a';
 
+  // Zonas: Z1/Z2/Z3 = topo (perto do GOL), Z7/Z8/Z9 = baixo (perto do MEIO CAMPO)
   const zonePos={
     Z1:{x:0,y:0},Z2:{x:colW,y:0},Z3:{x:colW*2,y:0},
     Z4:{x:0,y:rowH},Z5:{x:colW,y:rowH},Z6:{x:colW*2,y:rowH},
     Z7:{x:0,y:rowH*2},Z8:{x:colW,y:rowH*2},Z9:{x:colW*2,y:rowH*2},
   };
 
-  // FIFA: quadra 40×20m, metade = 20×20m
-  // Escala: W=300 → 20m → 1m=15px; H=260 → 20m → 1m=13px
-  const mX=W/20, mY=H/20;
+  const mX=W/20, mY=H/20; // 1m em pixels
 
-  // Área do goleiro: 6×3m, centrada na linha de fundo
-  const gkW=6*mX, gkH=3*mY;
-  const gkX=(W-gkW)/2, gkY=H-gkH;
-
-  // Arco de grande área: raio 6m do ponto de pênalti
-  const arcR=6*mX;
-  // Ponto de pênalti: 6m da linha de fundo
-  const penX=W/2, penY=H-6*mY;
-  // Segunda penalidade: 10m da linha de fundo
-  const pen2Y=H-10*mY;
-
-  // Traves: 3m centradas
+  // GOL no TOPO (y=0)
+  // Traves: 3m centradas no topo — apenas linha pontilhada (2D, sem profundidade)
   const traveW=3*mX;
-  const traveX=( W-traveW)/2;
+  const traveX=(W-traveW)/2;
 
-  // Arco de meio campo: raio 3m, apenas metade inferior (dentro da meia quadra)
+  // Área do goleiro: 6×3m centrada no topo
+  const gkW=6*mX, gkH=3*mY;
+  const gkX=(W-gkW)/2;
+  const gkY=0; // começa no topo
+
+  // Arco de grande área: raio 6m, centro no ponto de pênalti
+  // Ponto de pênalti: 6m do topo → y=6*mY
+  const penX=W/2, penY=6*mY;
+  const arcR=6*mX;
+  // Onde o arco intersecta a linha inferior da área do goleiro (y=gkH)
+  const dY=gkH-penY; // negativo pois penY > gkH
+  const arcDx=Math.sqrt(Math.max(0,arcR*arcR-dY*dY));
+  const arcX1=penX-arcDx, arcX2=penX+arcDx;
+
+  // Segunda penalidade: 10m do topo
+  const pen2Y=10*mY;
+
+  // Semicírculo de meio campo: raio 3m, na linha de baixo (y=H), metade superior
   const circR=3*mX;
-
-  // Calcular onde o arco de grande área intercepta Y=gkY para o arco
-  // O centro do arco está no ponto de pênalti (penX, penY)
-  // dx do arco nos extremos da área do goleiro
-  const arcDx=Math.sqrt(Math.max(0,arcR*arcR-(penY-gkY)*(penY-gkY)));
-  const arcStartX=penX-arcDx, arcEndX=penX+arcDx;
 
   return(
     <div className="zone-map">
       <svg viewBox={`0 0 ${W} ${H}`} className="halfcourt-svg"
         style={{width:'100%',maxWidth:`${W}px`,display:'block',
-          cursor:interactive?'pointer':'default'}}>
+                cursor:interactive?'pointer':'default'}}>
 
-        {/* FUNDO */}
-        <rect width={W} height={H} fill="#1565c0" rx="3"/>
+        {/* FUNDO azul */}
+        <rect width={W} height={H} fill="#1a6bbf" rx="3"/>
 
-        {/* ÁREA DO GOLEIRO — preenchimento laranja */}
-        <rect x={gkX} y={gkY} width={gkW} height={gkH+2} fill="#e65100" opacity="0.9"/>
-
-        {/* ARCO DE GRANDE ÁREA — preenchimento laranja */}
+        {/* ÁREA DO GOLEIRO — preenchimento laranja, no TOPO */}
+        {/* Inclui retângulo + arco abaixo */}
         <path
-          d={`M ${arcStartX} ${gkY} A ${arcR} ${arcR} 0 0 0 ${arcEndX} ${gkY}`}
-          fill="#e65100" opacity="0.9"/>
+          d={`M ${gkX} ${gkH} L ${gkX} 0 L ${gkX+gkW} 0 L ${gkX+gkW} ${gkH} A ${arcR} ${arcR} 0 0 1 ${gkX} ${gkH} Z`}
+          fill="#e65100" opacity="0.85"/>
 
         {/* MARCAÇÕES BRANCAS */}
-        <g stroke="white" strokeWidth="2" fill="none" strokeLinecap="round">
-          {/* Borda da meia quadra */}
-          <rect x="2" y="2" width={W-4} height={H-4} rx="2"/>
-          {/* Linha de meio campo (topo) */}
-          <line x1="2" y1="2" x2={W-2} y2="2"/>
-          {/* Semicírculo de meio campo — metade inferior */}
-          <path d={`M ${W/2-circR} 2 A ${circR} ${circR} 0 0 0 ${W/2+circR} 2`}/>
-          {/* Área do goleiro */}
-          <rect x={gkX} y={gkY} width={gkW} height={gkH}/>
-          {/* Arco de grande área (apenas parte acima da área do goleiro) */}
-          <path d={`M ${arcStartX} ${gkY} A ${arcR} ${arcR} 0 0 0 ${arcEndX} ${gkY}`}/>
-          {/* Linha de fundo */}
-          <line x1="2" y1={H-2} x2={W-2} y2={H-2}/>
-          {/* Linhas laterais reforçadas */}
-          <line x1="2" y1="2" x2="2" y2={H-2}/>
-          <line x1={W-2} y1="2" x2={W-2} y2={H-2}/>
-          {/* Cantos arredondados (raio 1m≈13px) */}
-          <path d={`M 2 ${H-14} Q 2 ${H-2} 14 ${H-2}`}/>
-          <path d={`M ${W-14} ${H-2} Q ${W-2} ${H-2} ${W-2} ${H-14}`}/>
-          <path d={`M 2 14 Q 2 2 14 2`}/>
-          <path d={`M ${W-14} 2 Q ${W-2} 2 ${W-2} 14`}/>
-          {/* Traves */}
-          <rect x={traveX} y={H-4} width={traveW} height={6} rx="1" fill="white" stroke="none"/>
-          <line x1={traveX} y1={H-4} x2={traveX} y2={H+2} strokeWidth="3"/>
-          <line x1={traveX+traveW} y1={H-4} x2={traveX+traveW} y2={H+2} strokeWidth="3"/>
+        <g stroke="white" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+          {/* Borda externa da meia quadra */}
+          <rect x="1.5" y="1.5" width={W-3} height={H-3} rx="2"/>
+          {/* Linha de meio campo — BAIXO */}
+          <line x1="1.5" y1={H-1.5} x2={W-1.5} y2={H-1.5}/>
+          {/* Semicírculo de meio campo (metade superior = dentro da quadra) */}
+          <path d={`M ${W/2-circR} ${H} A ${circR} ${circR} 0 0 0 ${W/2+circR} ${H}`}/>
+          {/* Área do goleiro (retângulo) */}
+          <rect x={gkX} y="1.5" width={gkW} height={gkH}/>
+          {/* Arco de grande área — saindo das extremidades da área do goleiro */}
+          <path d={`M ${arcX1} ${gkH} A ${arcR} ${arcR} 0 0 1 ${arcX2} ${gkH}`}/>
+          {/* Traves: linha pontilhada no topo (indica abertura do gol) */}
+          <line x1={traveX} y1="1.5" x2={traveX+traveW} y2="1.5" strokeDasharray="4 3" strokeWidth="3" stroke="#ffd700"/>
         </g>
 
         {/* PONTOS */}
+        {/* Ponto de pênalti (6m) */}
         <circle cx={penX} cy={penY} r="4" fill="white"/>
-        <circle cx={penX} cy={pen2Y} r="3" fill="white" opacity="0.65"/>
+        {/* Segunda penalidade (10m) */}
+        <circle cx={penX} cy={pen2Y} r="3" fill="white" opacity="0.6"/>
 
         {/* ZONAS CLICÁVEIS */}
         {ZONES.map(z=>{
@@ -214,19 +203,19 @@ function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null, inte
               style={{cursor:interactive?'pointer':'default'}}>
               {intensity>0&&(
                 <rect x={pos.x+1} y={pos.y+1} width={colW-2} height={rowH-2}
-                  fill={heatColor} opacity={0.1+intensity*0.42} rx="3"/>
+                  fill={heatColor} opacity={0.1+intensity*0.42} rx="2"/>
               )}
               {isActive&&(
                 <rect x={pos.x+2} y={pos.y+2} width={colW-4} height={rowH-4}
                   fill="rgba(250,233,42,0.22)" stroke="#fae92a" strokeWidth="2.5" rx="3"/>
               )}
               <rect x={pos.x} y={pos.y} width={colW} height={rowH} fill="transparent"/>
-              <text x={pos.x+colW/2} y={pos.y+rowH/2-(count>0?6:2)}
-                fill={isActive?'#fae92a':'rgba(255,255,255,0.8)'}
+              <text x={pos.x+colW/2} y={pos.y+rowH/2-(count>0?5:1)}
+                fill={isActive?'#fae92a':'rgba(255,255,255,0.85)'}
                 fontSize="11" fontWeight="700" textAnchor="middle"
                 fontFamily="sans-serif">{z.id}</text>
               {count>0&&(
-                <text x={pos.x+colW/2} y={pos.y+rowH/2+11}
+                <text x={pos.x+colW/2} y={pos.y+rowH/2+12}
                   fill={isActive?'#fae92a':heatColor}
                   fontSize="14" fontWeight="800" textAnchor="middle"
                   fontFamily="sans-serif">{count}</text>
@@ -236,18 +225,18 @@ function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null, inte
         })}
 
         {/* DIVISÓRIAS DAS ZONAS */}
-        <g stroke="rgba(255,255,255,0.18)" strokeWidth="1" strokeDasharray="5 4">
-          <line x1={colW} y1="2" x2={colW} y2={H-2}/>
-          <line x1={colW*2} y1="2" x2={colW*2} y2={H-2}/>
-          <line x1="2" y1={rowH} x2={W-2} y2={rowH}/>
-          <line x1="2" y1={rowH*2} x2={W-2} y2={rowH*2}/>
+        <g stroke="rgba(255,255,255,0.2)" strokeWidth="1" strokeDasharray="5 4">
+          <line x1={colW} y1="0" x2={colW} y2={H}/>
+          <line x1={colW*2} y1="0" x2={colW*2} y2={H}/>
+          <line x1="0" y1={rowH} x2={W} y2={rowH}/>
+          <line x1="0" y1={rowH*2} x2={W} y2={rowH*2}/>
         </g>
 
         {/* LABELS */}
-        <text x={W/2} y="14" fill="rgba(255,255,255,0.4)" fontSize="8"
-          fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="1.5">MEIO CAMPO</text>
-        <text x={W/2} y={H-10} fill="rgba(255,255,255,0.4)" fontSize="8"
+        <text x={W/2} y="14" fill="rgba(255,255,255,0.5)" fontSize="8"
           fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="1.5">GOL</text>
+        <text x={W/2} y={H-6} fill="rgba(255,255,255,0.5)" fontSize="8"
+          fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="1.5">MEIO CAMPO</text>
       </svg>
     </div>
   );
@@ -276,9 +265,9 @@ function MetricsBar({metrics}){
       </div>
       <div className="metric-divider"/>
       <div className="metric-item">
-        <span className="metric-val" style={{color:'#3b82f6'}}>{recAlt}</span>
-        <span className="metric-label">REC↑</span>
-        <span className="metric-sub">{recTotal}tot</span>
+        <span className="metric-val" style={{color:'#3b82f6'}}>{recTotal}</span>
+        <span className="metric-label">REC</span>
+        <span className="metric-sub">{recAlt}↑alt</span>
       </div>
       <div className="metric-divider"/>
       <div className="metric-item">
