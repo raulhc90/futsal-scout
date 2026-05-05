@@ -100,110 +100,157 @@ function exportZoneCSV(game){
   dl(lines.join('\n'),`futsal_zonas_${d.replace(/\//g,'-')}.csv`);
 }
 
-// ─── HalfCourtSVG — meia quadra de futsal com zonas 3x3 sobrepostas ──────────
-// Quadra FIFA: 40x20m — mostramos metade ofensiva (20x20m)
-// SVG: 300x280px — zonas Z7/Z8/Z9 = linha ofensiva (perto do gol)
-//                   Z1/Z2/Z3 = linha defensiva do lado ofensivo (meio campo)
+// ─── ZoneMap — meia quadra FIFA com zonas 3x3 sobrepostas ───────────────────
+// SVG 300x280 landscape — orientação: meio campo no TOPO, gol na PARTE INFERIOR
+// Zonas: Z1/Z2/Z3 = terço defensivo (topo), Z4/Z5/Z6 = meio, Z7/Z8/Z9 = ofensivo (gol)
 function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null, interactive=true}){
+  const W=300, H=260;
+  const colW=W/3, rowH=H/3;
+
+  // Contagem por zona para heatmap
   const zoneCounts={};
   ZONES.forEach(z=>{
     const filtered=highlightType?events.filter(e=>e.zone===z.id&&e.type===highlightType):events.filter(e=>e.zone===z.id);
     zoneCounts[z.id]=filtered.length;
   });
   const maxCount=Math.max(...Object.values(zoneCounts),1);
-
-  // Dimensões SVG
-  const W=300, H=260;
-  // Zonas: 3 colunas x 3 linhas cobrindo a área toda
-  const colW=W/3, rowH=H/3;
-  // Cores por tipo de evento
   const typeColor={fin:'#22c55e',perda:'#ef4444',recup:'#3b82f6',falta:'#f59e0b'};
   const heatColor=highlightType?typeColor[highlightType]:'#fae92a';
 
-  // Posição de cada zona no SVG (row 0 = topo = defensivo, row 2 = baixo = ofensivo/gol)
+  // Posição de cada zona
   const zonePos={
     Z1:{x:0,y:0},Z2:{x:colW,y:0},Z3:{x:colW*2,y:0},
     Z4:{x:0,y:rowH},Z5:{x:colW,y:rowH},Z6:{x:colW*2,y:rowH},
     Z7:{x:0,y:rowH*2},Z8:{x:colW,y:rowH*2},Z9:{x:colW*2,y:rowH*2},
   };
 
+  // Dimensões das marcações FIFA (proporcionais ao SVG)
+  // Quadra real: 40x20m → metade = 20x20m
+  // Escala: W=300px = 20m → 1m = 15px; H=260px = 20m (aprox)
+  const scaleX = W/20, scaleY = H/20;
+  // Área do goleiro: 6x3m → 90x45px, centrada
+  const gkW = 6*scaleX, gkH = 3*scaleY;
+  const gkX = (W-gkW)/2;
+  const gkY = H - gkH - 2;
+  // Ponto de pênalti: 6m da linha de fundo → H-90
+  const penY = H - 6*scaleY;
+  const penX = W/2;
+  // Segunda penalidade: 10m → H-150
+  const pen2Y = H - 10*scaleY;
+  // Raio do arco de pênalti: 6m = 90px
+  const arcR = 6*scaleX;
+  // Traves: 3m largura centradas
+  const traveW = 3*scaleX;
+  const traveX1 = (W-traveW)/2;
+  // Linha de meio campo (topo)
+  const midLineY = 2;
+  // Círculo central de meio campo (apenas metade)
+  const circR = 3*scaleX; // 3m de raio
+
   return(
     <div className="zone-map">
       <svg viewBox={`0 0 ${W} ${H}`} className="halfcourt-svg"
-        style={{width:'100%',maxWidth:`${W}px`,display:'block',cursor:interactive?'pointer':'default'}}>
+        style={{width:'100%',maxWidth:`${W}px`,display:'block',
+          cursor:interactive?'pointer':'default'}}>
 
-        {/* ── Fundo da meia quadra ── */}
-        <rect width={W} height={H} fill="#1a2a1a" rx="4"/>
+        {/* ── FUNDO ── */}
+        <rect width={W} height={H} fill="#1565c0" rx="3"/>
 
-        {/* Linha de meio campo (topo) */}
-        <line x1="0" y1="2" x2={W} y2="2" stroke="#4a6a4a" strokeWidth="2"/>
+        {/* ── MARCAÇÕES BRANCAS DA QUADRA ── */}
+        <g stroke="white" strokeWidth="2" fill="none">
+          {/* Borda da meia quadra */}
+          <rect x="2" y="2" width={W-4} height={H-4} rx="2"/>
 
-        {/* Linhas laterais */}
-        <line x1="2" y1="0" x2="2" y2={H} stroke="#4a6a4a" strokeWidth="2"/>
-        <line x1={W-2} y1="0" x2={W-2} y2={H} stroke="#4a6a4a" strokeWidth="2"/>
+          {/* Linha de meio campo (topo) */}
+          <line x1="2" y1={midLineY} x2={W-2} y2={midLineY}/>
 
-        {/* Linha de fundo (baixo = gol) */}
-        <line x1="0" y1={H-2} x2={W} y2={H-2} stroke="#4a6a4a" strokeWidth="2"/>
+          {/* Semicírculo de meio campo (metade inferior do círculo central) */}
+          <path d={`M ${W/2-circR} ${midLineY} A ${circR} ${circR} 0 0 0 ${W/2+circR} ${midLineY}`}/>
 
-        {/* Traves */}
-        <rect x={W*0.35} y={H-6} width={W*0.3} height={8} fill="#ffffff" rx="2"/>
+          {/* Área do goleiro (retângulo) */}
+          <rect x={gkX} y={gkY} width={gkW} height={gkH+2}/>
 
-        {/* Área do goleiro — semicírculo */}
-        <path d={`M ${W*0.15} ${H-2} A ${W*0.35} ${W*0.35} 0 0 0 ${W*0.85} ${H-2}`}
-          fill="none" stroke="#4a6a4a" strokeWidth="1.5"/>
+          {/* Arco de pênalti (semicírculo acima da área) */}
+          <path d={`M ${penX-arcR} ${gkY} A ${arcR} ${arcR} 0 0 1 ${penX+arcR} ${gkY}`}/>
 
-        {/* Ponto de pênalti (6m) */}
-        <circle cx={W/2} cy={H-42} r="3" fill="#f59e0b"/>
+          {/* Linha de fundo */}
+          <line x1="2" y1={H-2} x2={W-2} y2={H-2}/>
 
-        {/* Segunda penalidade (10m) */}
-        <circle cx={W/2} cy={H-72} r="2.5" fill="rgba(249,115,22,0.5)"/>
+          {/* Traves */}
+          <rect x={traveX1} y={H-5} width={traveW} height={7} rx="1.5" fill="white" stroke="white" strokeWidth="1"/>
 
-        {/* Linha do meio (vertical e horizontal para marcar zonas) */}
-        <line x1={colW} y1="0" x2={colW} y2={H} stroke="rgba(255,255,255,0.08)" strokeWidth="1" strokeDasharray="4 3"/>
-        <line x1={colW*2} y1="0" x2={colW*2} y2={H} stroke="rgba(255,255,255,0.08)" strokeWidth="1" strokeDasharray="4 3"/>
-        <line x1="0" y1={rowH} x2={W} y2={rowH} stroke="rgba(255,255,255,0.08)" strokeWidth="1" strokeDasharray="4 3"/>
-        <line x1="0" y1={rowH*2} x2={W} y2={rowH*2} stroke="rgba(255,255,255,0.08)" strokeWidth="1" strokeDasharray="4 3"/>
+          {/* Marcas de canto (quartos de círculo) */}
+          <path d={`M 2 ${H*0.07} A ${H*0.06} ${H*0.06} 0 0 1 ${W*0.06} ${H-2}`} opacity="0"/>
+          {/* cantos simplificados */}
+          <path d={`M 2 ${H-14} Q 2 ${H-2} 14 ${H-2}`}/>
+          <path d={`M ${W-14} ${H-2} Q ${W-2} ${H-2} ${W-2} ${H-14}`}/>
+          <path d={`M 2 14 Q 2 2 14 2`}/>
+          <path d={`M ${W-14} 2 Q ${W-2} 2 ${W-2} 14`}/>
+        </g>
 
-        {/* ── Zonas clicáveis ── */}
+        {/* ── ÁREA DO GOLEIRO preenchida (laranja) ── */}
+        <path d={`M ${gkX} ${gkY} A ${arcR} ${arcR} 0 0 1 ${gkX+gkW} ${gkY} L ${gkX+gkW} ${H-2} L ${gkX} ${H-2} Z`}
+          fill="#e65100" opacity="0.85"/>
+        {/* Borda da área */}
+        <g stroke="white" strokeWidth="2" fill="none">
+          <path d={`M ${penX-arcR} ${gkY} A ${arcR} ${arcR} 0 0 1 ${penX+arcR} ${gkY}`}/>
+          <line x1={gkX} y1={gkY} x2={gkX} y2={H-2}/>
+          <line x1={gkX+gkW} y1={gkY} x2={gkX+gkW} y2={H-2}/>
+        </g>
+
+        {/* ── PONTOS ── */}
+        {/* Ponto de pênalti */}
+        <circle cx={penX} cy={penY} r="4" fill="white"/>
+        {/* Segunda penalidade */}
+        <circle cx={penX} cy={pen2Y} r="3" fill="white" opacity="0.7"/>
+
+        {/* ── ZONAS CLICÁVEIS (overlay semitransparente) ── */}
         {ZONES.map(z=>{
           const count=zoneCounts[z.id]||0;
           const intensity=count/maxCount;
           const isActive=activeZone===z.id;
           const pos=zonePos[z.id];
           return(
-            <g key={z.id} onClick={()=>onSelect(z.id)} style={{cursor:'pointer'}}>
+            <g key={z.id} onClick={interactive?()=>onSelect(z.id):undefined}
+              style={{cursor:interactive?'pointer':'default'}}>
               {/* Heat overlay */}
               {intensity>0&&(
                 <rect x={pos.x+1} y={pos.y+1} width={colW-2} height={rowH-2}
-                  fill={heatColor} opacity={0.12+intensity*0.35} rx="2"/>
+                  fill={heatColor} opacity={0.1+intensity*0.4} rx="3"/>
               )}
               {/* Borda ativa */}
               {isActive&&(
                 <rect x={pos.x+2} y={pos.y+2} width={colW-4} height={rowH-4}
-                  fill="rgba(250,233,42,0.18)" stroke="#fae92a" strokeWidth="2" rx="2"/>
+                  fill="rgba(250,233,42,0.2)" stroke="#fae92a" strokeWidth="2.5" rx="3"/>
               )}
-              {/* Hit area invisível */}
-              <rect x={pos.x} y={pos.y} width={colW} height={rowH} fill="transparent" style={{cursor:interactive?'pointer':'default'}}/>
-              {/* Label da zona */}
-              <text x={pos.x+colW/2} y={pos.y+rowH/2-6}
-                fill={isActive?'#fae92a':'rgba(255,255,255,0.5)'}
-                fontSize="11" fontWeight="700" textAnchor="middle"
-                fontFamily="sans-serif">{z.id}</text>
-              {/* Contagem */}
+              {/* Hit area */}
+              <rect x={pos.x} y={pos.y} width={colW} height={rowH} fill="transparent"/>
+              {/* Label */}
+              <text x={pos.x+colW/2} y={pos.y+rowH/2-5}
+                fill={isActive?'#fae92a':'rgba(255,255,255,0.75)'}
+                fontSize="11" fontWeight="700" textAnchor="middle" fontFamily="sans-serif">{z.id}</text>
               {count>0&&(
-                <text x={pos.x+colW/2} y={pos.y+rowH/2+10}
-                  fill={heatColor} fontSize="13" fontWeight="800"
-                  textAnchor="middle" fontFamily="sans-serif">{count}</text>
+                <text x={pos.x+colW/2} y={pos.y+rowH/2+11}
+                  fill={isActive?'#fae92a':heatColor}
+                  fontSize="14" fontWeight="800" textAnchor="middle" fontFamily="sans-serif">{count}</text>
               )}
             </g>
           );
         })}
 
-        {/* Labels de orientação */}
-        <text x={W/2} y="14" fill="rgba(59,130,246,0.6)" fontSize="9"
-          fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="2">MEIO CAMPO</text>
-        <text x={W/2} y={H-10} fill="rgba(34,197,94,0.6)" fontSize="9"
-          fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="2">GOL</text>
+        {/* ── DIVISÓRIAS DAS ZONAS (linhas pontilhadas) ── */}
+        <g stroke="rgba(255,255,255,0.2)" strokeWidth="1" strokeDasharray="5 4">
+          <line x1={colW} y1="2" x2={colW} y2={H-2}/>
+          <line x1={colW*2} y1="2" x2={colW*2} y2={H-2}/>
+          <line x1="2" y1={rowH} x2={W-2} y2={rowH}/>
+          <line x1="2" y1={rowH*2} x2={W-2} y2={rowH*2}/>
+        </g>
+
+        {/* ── LABELS ORIENTAÇÃO ── */}
+        <text x={W/2} y="14" fill="rgba(255,255,255,0.45)" fontSize="8"
+          fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="1.5">MEIO CAMPO</text>
+        <text x={W/2} y={H-8} fill="rgba(255,255,255,0.45)" fontSize="8"
+          fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="1.5">GOL</text>
       </svg>
     </div>
   );
@@ -530,7 +577,7 @@ function LogPanel({events, onUndo}){
 }
 
 // ─── ScoutPanel — painel principal de registro ────────────────────────────────
-function ScoutPanel({game, running, onAddEvent, onAddGoal, onAddGoalAdv, onUndo}){
+function ScoutPanel({game, running, onAddEvent, onAddGoal, onAddGoalAdv, onUndo, onUpdateLastEvent}){
   const [step,setStep]   = useState('event');
   const [pending,setPending] = useState(null);
 
@@ -540,16 +587,30 @@ function ScoutPanel({game, running, onAddEvent, onAddGoal, onAddGoalAdv, onUndo}
   const reset=()=>{setStep('event');setPending(null);};
   const onEvent=ev=>{setPending({type:ev.id});setStep('zone');};
   const onZone=zoneId=>{setPending(p=>({...p,zone:zoneId}));setStep('result');};
-  const onResult=resId=>{setPending(p=>({...p,result:resId}));setStep('player');};
-  const onPlayer=player=>{
+  const onResult=resId=>{
+    // Salvar evento imediatamente ao selecionar resultado — jogador é opcional via overlay
     const ev={
-      ...pending,
+      ...pending, result:resId,
       quarter:getQL(game.quarter),time:fmtTime(game.clock),numeric:game.numeric,
-      playerName:player?`#${player.number} ${player.name.split(' ')[0]}`:'',
-      playerIdx:player?myTeam.players.indexOf(player):null,
+      playerName:'', playerIdx:null,
     };
     if(ev.type==='fin'&&ev.result==='gol') onAddGoal(ev);
     else onAddEvent(ev);
+    // Abrir overlay de jogador para enriquecer o evento (não bloqueia o fluxo)
+    setPending(p=>({...p,result:resId,saved:true}));
+    setStep('player');
+  };
+  const onPlayer=player=>{
+    if(player&&game.events.length>0){
+      // Atualizar o último evento com o jogador selecionado
+      const lastIdx=game.events.length-1;
+      const updated={
+        ...game.events[lastIdx],
+        playerName:`#${player.number} ${player.name.split(' ')[0]}`,
+        playerIdx:myTeam.players.indexOf(player),
+      };
+      onUpdateLastEvent(updated);
+    }
     reset();
   };
   const results=pending?.type?RESULTS[pending.type]:[];
@@ -911,6 +972,15 @@ export default function App(){
     showToast(`${EVENTS.find(e=>e.id===ev.type)?.emoji} ${ev.zone} — ${RESULTS[ev.type]?.find(r=>r.id===ev.result)?.label||''}`);
   },[]);
 
+  const updateLastEvent=useCallback(updated=>{
+    setGame(g=>{
+      if(!g.events.length)return g;
+      const events=[...g.events];
+      events[events.length-1]=updated;
+      return{...g,events};
+    });
+  },[]);
+
   const addGoal=useCallback(ev=>{
     setGame(g=>{
       const teams=g.teams.map((t,ti)=>ti!==g.myTeam?t:({...t,score:t.score+1}));
@@ -1056,7 +1126,8 @@ export default function App(){
             onAddEvent={addEvent}
             onAddGoal={addGoal}
             onAddGoalAdv={addGoalAdv}
-            onUndo={undoLast}/>
+            onUndo={undoLast}
+            onUpdateLastEvent={updateLastEvent}/>
           <MetricsBar metrics={metrics}/>
         </>
       )}
