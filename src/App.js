@@ -100,10 +100,11 @@ function exportZoneCSV(game){
   dl(lines.join('\n'),`futsal_zonas_${d.replace(/\//g,'-')}.csv`);
 }
 
-// ─── ZoneMap ──────────────────────────────────────────────────────────────────
-// Mapa 3x3 clicável com overlay de densidade de eventos
+// ─── HalfCourtSVG — meia quadra de futsal com zonas 3x3 sobrepostas ──────────
+// Quadra FIFA: 40x20m — mostramos metade ofensiva (20x20m)
+// SVG: 300x280px — zonas Z7/Z8/Z9 = linha ofensiva (perto do gol)
+//                   Z1/Z2/Z3 = linha defensiva do lado ofensivo (meio campo)
 function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null}){
-  // Calcular densidade por zona para heatmap visual
   const zoneCounts={};
   ZONES.forEach(z=>{
     const filtered=highlightType?events.filter(e=>e.zone===z.id&&e.type===highlightType):events.filter(e=>e.zone===z.id);
@@ -111,26 +112,99 @@ function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null}){
   });
   const maxCount=Math.max(...Object.values(zoneCounts),1);
 
+  // Dimensões SVG
+  const W=300, H=260;
+  // Zonas: 3 colunas x 3 linhas cobrindo a área toda
+  const colW=W/3, rowH=H/3;
+  // Cores por tipo de evento
+  const typeColor={fin:'#22c55e',perda:'#ef4444',recup:'#3b82f6',falta:'#f59e0b'};
+  const heatColor=highlightType?typeColor[highlightType]:'#fae92a';
+
+  // Posição de cada zona no SVG (row 0 = topo = defensivo, row 2 = baixo = ofensivo/gol)
+  const zonePos={
+    Z1:{x:0,y:0},Z2:{x:colW,y:0},Z3:{x:colW*2,y:0},
+    Z4:{x:0,y:rowH},Z5:{x:colW,y:rowH},Z6:{x:colW*2,y:rowH},
+    Z7:{x:0,y:rowH*2},Z8:{x:colW,y:rowH*2},Z9:{x:colW*2,y:rowH*2},
+  };
+
   return(
     <div className="zone-map">
-      {/* Labels de orientação */}
-      <div className="zone-map-label zone-label-def">DEF</div>
-      <div className="zone-grid">
+      <svg viewBox={`0 0 ${W} ${H}`} className="halfcourt-svg"
+        style={{width:'100%',maxWidth:`${W}px`,display:'block'}}>
+
+        {/* ── Fundo da meia quadra ── */}
+        <rect width={W} height={H} fill="#1a2a1a" rx="4"/>
+
+        {/* Linha de meio campo (topo) */}
+        <line x1="0" y1="2" x2={W} y2="2" stroke="#4a6a4a" strokeWidth="2"/>
+
+        {/* Linhas laterais */}
+        <line x1="2" y1="0" x2="2" y2={H} stroke="#4a6a4a" strokeWidth="2"/>
+        <line x1={W-2} y1="0" x2={W-2} y2={H} stroke="#4a6a4a" strokeWidth="2"/>
+
+        {/* Linha de fundo (baixo = gol) */}
+        <line x1="0" y1={H-2} x2={W} y2={H-2} stroke="#4a6a4a" strokeWidth="2"/>
+
+        {/* Traves */}
+        <rect x={W*0.35} y={H-6} width={W*0.3} height={8} fill="#ffffff" rx="2"/>
+
+        {/* Área do goleiro — semicírculo */}
+        <path d={`M ${W*0.15} ${H-2} A ${W*0.35} ${W*0.35} 0 0 0 ${W*0.85} ${H-2}`}
+          fill="none" stroke="#4a6a4a" strokeWidth="1.5"/>
+
+        {/* Ponto de pênalti (6m) */}
+        <circle cx={W/2} cy={H-42} r="3" fill="#f59e0b"/>
+
+        {/* Segunda penalidade (10m) */}
+        <circle cx={W/2} cy={H-72} r="2.5" fill="rgba(249,115,22,0.5)"/>
+
+        {/* Linha do meio (vertical e horizontal para marcar zonas) */}
+        <line x1={colW} y1="0" x2={colW} y2={H} stroke="rgba(255,255,255,0.08)" strokeWidth="1" strokeDasharray="4 3"/>
+        <line x1={colW*2} y1="0" x2={colW*2} y2={H} stroke="rgba(255,255,255,0.08)" strokeWidth="1" strokeDasharray="4 3"/>
+        <line x1="0" y1={rowH} x2={W} y2={rowH} stroke="rgba(255,255,255,0.08)" strokeWidth="1" strokeDasharray="4 3"/>
+        <line x1="0" y1={rowH*2} x2={W} y2={rowH*2} stroke="rgba(255,255,255,0.08)" strokeWidth="1" strokeDasharray="4 3"/>
+
+        {/* ── Zonas clicáveis ── */}
         {ZONES.map(z=>{
           const count=zoneCounts[z.id]||0;
           const intensity=count/maxCount;
           const isActive=activeZone===z.id;
+          const pos=zonePos[z.id];
           return(
-            <button key={z.id} className={`zone-btn${isActive?' active':''}`}
-              style={{'--intensity':intensity,'--zone-color':isActive?'var(--accent)':'transparent'}}
-              onClick={()=>onSelect(z.id)}>
-              <span className="zone-id">{z.id}</span>
-              {count>0&&<span className="zone-count">{count}</span>}
-            </button>
+            <g key={z.id} onClick={()=>onSelect(z.id)} style={{cursor:'pointer'}}>
+              {/* Heat overlay */}
+              {intensity>0&&(
+                <rect x={pos.x+1} y={pos.y+1} width={colW-2} height={rowH-2}
+                  fill={heatColor} opacity={0.12+intensity*0.35} rx="2"/>
+              )}
+              {/* Borda ativa */}
+              {isActive&&(
+                <rect x={pos.x+2} y={pos.y+2} width={colW-4} height={rowH-4}
+                  fill="rgba(250,233,42,0.18)" stroke="#fae92a" strokeWidth="2" rx="2"/>
+              )}
+              {/* Hit area invisível */}
+              <rect x={pos.x} y={pos.y} width={colW} height={rowH} fill="transparent"/>
+              {/* Label da zona */}
+              <text x={pos.x+colW/2} y={pos.y+rowH/2-6}
+                fill={isActive?'#fae92a':'rgba(255,255,255,0.5)'}
+                fontSize="11" fontWeight="700" textAnchor="middle"
+                fontFamily="sans-serif">{z.id}</text>
+              {/* Contagem */}
+              {count>0&&(
+                <text x={pos.x+colW/2} y={pos.y+rowH/2+10}
+                  fill={heatColor} fontSize="13" fontWeight="800"
+                  textAnchor="middle" fontFamily="sans-serif">{count}</text>
+              )}
+            </g>
           );
         })}
-      </div>
-      <div className="zone-map-label zone-label-atq">ATQ</div>
+
+        {/* Labels de orientação */}
+        <text x={W/2} y="14" fill="rgba(59,130,246,0.6)" fontSize="9"
+          fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="2">MEIO CAMPO</text>
+        <text x={W/2} y={H-10} fill="rgba(34,197,94,0.6)" fontSize="9"
+          fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="2">GOL</text>
+      </svg>
     </div>
   );
 }
@@ -183,36 +257,19 @@ function NumericToggle({value, onChange}){
   );
 }
 
-// ─── ScoreBoard ───────────────────────────────────────────────────────────────
+// ─── ScoreBoard — linha única compacta (como mockup) ─────────────────────────
 function ScoreBoard({game, running, onToggleRun, onNextPeriod}){
-  const numState=NUMERIC_STATES.find(s=>s.id===game.numeric)||NUMERIC_STATES[0];
-  const isLow=game.clock<120; // últimos 2 min
+  const isLow=game.clock<120;
   return(
     <div className="scoreboard-bar">
-      <div className="sb-team sb-left">
-        <span className="sb-name">{game.teams[0].name}</span>
-        <span className="sb-score" style={{color:game.myTeam===0?'var(--accent)':'var(--text)'}}>{game.teams[0].score}</span>
-      </div>
-
-      <div className="sb-center">
-        <div className="sb-period">{getQL(game.quarter)}</div>
-        <div className={`sb-clock${isLow?' clock-low':''}`}>{fmtTime(game.clock)}</div>
-        <div className="sb-controls">
-          <button className={`sb-play${running?' playing':''}`} onClick={onToggleRun}>
-            {running?'⏸':'▶'}
-          </button>
-          <button className="sb-next" onClick={onNextPeriod}>›</button>
-        </div>
-      </div>
-
-      <div className="sb-team sb-right">
-        <span className="sb-score" style={{color:game.myTeam===1?'var(--accent)':'var(--text)'}}>{game.teams[1].score}</span>
-        <span className="sb-name">{game.teams[1].name}</span>
-      </div>
-
-      <div className="sb-numeric" style={{'--nc':numState.color}}>
-        <span>{numState.label}</span>
-      </div>
+      <span className="sb-name-inline">{game.teams[0].name}</span>
+      <span className="sb-score-inline" style={{color:game.myTeam===0?'var(--accent)':'var(--text)'}}>{game.teams[0].score}</span>
+      <span className="sb-sep">×</span>
+      <span className="sb-score-inline" style={{color:game.myTeam===1?'var(--accent)':'var(--text)'}}>{game.teams[1].score}</span>
+      <span className="sb-name-inline">{game.teams[1].name}</span>
+      <button className={`sb-play${running?' playing':''}`} onClick={onToggleRun}>{running?'⏸':'▶'}</button>
+      <span className={`sb-clock-inline${isLow?' clock-low':''}`}>{fmtTime(game.clock)}</span>
+      <button className="sb-next" onClick={onNextPeriod} title="Próximo período">›T</button>
     </div>
   );
 }
@@ -838,24 +895,26 @@ export default function App(){
             onToggleRun={()=>setRunning(r=>!r)}
             onNextPeriod={()=>{if(game.clock>0){showToast(`Faltam ${fmtTime(game.clock)}`);return;}setShowPeriodEnd(true);}}/>
           <NumericToggle value={game.numeric} onChange={setNumeric}/>
+          <button className="undo-hdr-btn" onClick={undoLast} title="Desfazer">↩</button>
         </div>
-        <MetricsBar metrics={metrics}/>
         <nav className="nav">
           {[['scout','Scout'],['heatmap','Mapa'],['log','Log']].map(([v,l])=>(
             <button key={v} className="nav-btn" data-active={view===v} onClick={()=>setView(v)}>{l}</button>
           ))}
-          <button className="nav-btn undo-nav" onClick={undoLast}>↩</button>
         </nav>
       </div>
 
       {/* ── SCOUT ── */}
       {view==='scout'&&(
-        <ScoutPanel
-          game={game}
-          running={running}
-          onAddEvent={addEvent}
-          onAddGoal={addGoal}
-          onAddGoalAdv={addGoalAdv}/>
+        <>
+          <ScoutPanel
+            game={game}
+            running={running}
+            onAddEvent={addEvent}
+            onAddGoal={addGoal}
+            onAddGoalAdv={addGoalAdv}/>
+          <MetricsBar metrics={metrics}/>
+        </>
       )}
 
       {/* ── HEATMAP ── */}
