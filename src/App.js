@@ -137,8 +137,6 @@ function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null, inte
   // Área do goleiro: 6×3m centrada no topo
   const gkW=6*mX, gkH=3*mY;
   const gkX=(W-gkW)/2;
-  const gkY=0; // começa no topo
-
   // Arco de grande área: raio 6m, centro no ponto de pênalti
   // Ponto de pênalti: 6m do topo → y=6*mY
   const penX=W/2, penY=6*mY;
