@@ -100,15 +100,15 @@ function exportZoneCSV(game){
   dl(lines.join('\n'),`futsal_zonas_${d.replace(/\//g,'-')}.csv`);
 }
 
-// ─── ZoneMap — meia quadra FIFA ──────────────────────────────────────────────
-// viewBox 400×300 — GOL no topo, meio campo embaixo
-// Quadra FIFA futsal: 40×20m — metade: 20×20m → proporcional quadrado
-// Escala: 400/20 = 20px/m (horizontal), 300/20 = 15px/m (vertical)
+// ─── ZoneMap — quadra FIFA correta ──────────────────────────────────────────
+// SVG 400×440, viewBox="0 0 400 440"
+// GOL no TOPO, MEIO CAMPO no FUNDO
+// Quadra FIFA: 40x20m, metade ofensiva: 20x20m
+// Escala: W/20 = 20px/m horizontal; H/22 ≈ 20px/m vertical (com margem)
 function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null, interactive=true}){
-  const W=400, H=300;
-  const cW=W/3, rH=H/3; // zona: ~133×100
+  const W=400, H=440;
+  const cW=W/3, rH=H/3;
 
-  // contagem de eventos por zona
   const cnt={};
   ZONES.forEach(z=>{
     cnt[z.id]=(highlightType
@@ -125,97 +125,133 @@ function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null, inte
     Z7:{x:0,y:rH*2},Z8:{x:cW,y:rH*2},Z9:{x:cW*2,y:rH*2},
   };
 
-  // Escala
-  const mx_=W/20, my_=H/20; // pixels por metro
+  // ── Marcações FIFA (escala: 1m = 20px horizontal, ~20px vertical) ──
+  // Ponto de pênalti: 6m da linha de gol (topo)
+  const penX=W/2, penY=6*20;           // 120px do topo
+  // Raio do arco de penalti: 6m = 120px
+  const arcR=6*20;
+  // Área do goleiro: retângulo 6m×3m centrado no topo + o "D"
+  // Na FIFA, a área é delimitada pelo semicírculo de raio 6m do ponto de pênalti
+  // A linha reta (corda) fica a 6m-3m=... na verdade:
+  // Linha de gol = y=0. Área do goleiro = tudo dentro de 6m do ponto de pênalti
+  // que está a 6m → todo o semicírculo de raio 6m centrado em (W/2, 120)
+  // O limite inferior do arco: y = penY + arcR = 120+120 = 240px
+  // Mas isso seria muito grande. Na prática FIFA: área = retângulo 6×3m + arco
+  // Retângulo: 6m wide (120px), 3m deep (60px) → gkX=140 a 260, gkY=0 a 60
+  const gkW=6*20, gkH=3*20;
+  const gkX=(W-gkW)/2;  // (400-120)/2 = 140
+  // O arco de pênalti: raio 6m a partir do ponto de pênalti (6m da linha)
+  // Intersecção com y=gkH (60px): dx = sqrt(R²-(penY-gkH)²) = sqrt(120²-60²) = sqrt(10800) ≈ 103.9
+  const dy=penY-gkH;    // 120-60=60
+  const arcDx=Math.sqrt(arcR*arcR-dy*dy); // ≈ 103.9px
 
-  // Área do goleiro: 6m wide × 3m deep, centrada no TOPO
-  const gkW=6*mx_, gkH=3*my_;
-  const gkX=(W-gkW)/2;
+  // Segunda penalidade: 10m = 200px do topo
+  const pen2Y=10*20;
 
-  // Ponto de pênalti: 6m do topo
-  const penX=W/2, penY=6*my_;
-  // Raio do arco: 6m
-  const arcR=6*mx_;
-  // Interseção do arco com y=gkH (linha inferior da área do goleiro)
-  const dy=penY-gkH; // distância vertical entre ponto de pênalti e borda inferior da área
-  const arcDx=Math.sqrt(Math.max(0,arcR*arcR-dy*dy));
+  // Semicírculo de meio campo: raio 3m=60px, centrado na linha de baixo
+  const cR=3*20;
 
-  // Segunda penalidade: 10m do topo
-  const pen2Y=10*my_;
-
-  // Semicírculo de meio campo: raio 3m, na borda inferior, metade de cima
-  const cR=3*mx_;
+  // Marcas de canto: raio 2.5px arco (25cm = 5px)
+  const cornerR=25;
 
   return(
     <div className="zone-map">
       <svg viewBox={`0 0 ${W} ${H}`} className="halfcourt-svg"
            preserveAspectRatio="xMidYMid meet"
-           style={{width:'100%',height:'100%',cursor:interactive?'pointer':'default'}}>
+           style={{width:'100%',height:'100%',
+                   cursor:interactive?'pointer':'default'}}>
 
-        {/* ── FUNDO ── */}
-        <rect width={W} height={H} fill="#1a6bbf"/>
+        {/* FUNDO */}
+        <rect width={W} height={H} fill="#3355cc"/>
 
-        {/* ── ÁREA DO GOLEIRO — laranja com arco ── */}
-        {/* Retângulo da área */}
-        <rect x={gkX} y={0} width={gkW} height={gkH} fill="#e65100" opacity="0.9"/>
-        {/* Arco da área (abaixo da linha inferior da área) */}
+        {/* ÁREA DO GOLEIRO (laranja) — retângulo + arco para baixo */}
+        {/* Forma: começa na linha de gol, retângulo 6x3m, depois arco de raio 6m */}
         <path
-          d={`M ${penX-arcDx} ${gkH} A ${arcR} ${arcR} 0 0 1 ${penX+arcDx} ${gkH}`}
-          fill="#e65100" opacity="0.9"
-        />
+          d={`M ${gkX} 0
+              L ${gkX} ${gkH}
+              L ${penX-arcDx} ${gkH}
+              A ${arcR} ${arcR} 0 0 0 ${penX+arcDx} ${gkH}
+              L ${gkX+gkW} ${gkH}
+              L ${gkX+gkW} 0
+              Z`}
+          fill="#f5a623" opacity="0.95"/>
 
-        {/* ── LINHAS BRANCAS ── */}
-        <g stroke="white" strokeWidth="2.5" fill="none" strokeLinecap="round">
-          {/* Borda */}
-          <rect x="1.5" y="1.5" width={W-3} height={H-3}/>
-          {/* Borda lateral da área do goleiro */}
-          <line x1={gkX} y1="1.5" x2={gkX} y2={gkH}/>
-          <line x1={gkX+gkW} y1="1.5" x2={gkX+gkW} y2={gkH}/>
-          {/* Linha inferior da área do goleiro */}
-          <line x1={gkX} y1={gkH} x2={penX-arcDx} y2={gkH}/>
-          <line x1={penX+arcDx} y1={gkH} x2={gkX+gkW} y2={gkH}/>
-          {/* Arco da grande área */}
-          <path d={`M ${penX-arcDx} ${gkH} A ${arcR} ${arcR} 0 0 1 ${penX+arcDx} ${gkH}`}/>
-          {/* Semicírculo de meio campo */}
-          <path d={`M ${W/2-cR} ${H-1.5} A ${cR} ${cR} 0 0 0 ${W/2+cR} ${H-1.5}`}/>
+        {/* MARCAÇÕES BRANCAS */}
+        <g stroke="white" fill="none" strokeLinecap="round" strokeLinejoin="round">
+
+          {/* Borda da quadra */}
+          <rect x="3" y="3" width={W-6} height={H-6} strokeWidth="3"/>
+
+          {/* Linha de meio campo (fundo) */}
+          <line x1="3" y1={H-3} x2={W-3} y2={H-3} strokeWidth="3"/>
+
+          {/* Área do goleiro — contorno */}
+          <path
+            d={`M ${gkX} 0
+                L ${gkX} ${gkH}
+                L ${penX-arcDx} ${gkH}
+                A ${arcR} ${arcR} 0 0 0 ${penX+arcDx} ${gkH}
+                L ${gkX+gkW} ${gkH}
+                L ${gkX+gkW} 0`}
+            strokeWidth="2.5"/>
+
+          {/* Semicírculo de meio campo (dentro da quadra, arco apontando para cima) */}
+          <path d={`M ${W/2-cR} ${H-3} A ${cR} ${cR} 0 0 0 ${W/2+cR} ${H-3}`} strokeWidth="2.5"/>
+
+          {/* Marcas de canto (quarto de círculo, raio ~25px) */}
+          <path d={`M 3 ${cornerR+3} A ${cornerR} ${cornerR} 0 0 0 ${cornerR+3} 3`} strokeWidth="2"/>
+          <path d={`M ${W-cornerR-3} 3 A ${cornerR} ${cornerR} 0 0 0 ${W-3} ${cornerR+3}`} strokeWidth="2"/>
+          <path d={`M 3 ${H-cornerR-3} A ${cornerR} ${cornerR} 0 0 1 ${cornerR+3} ${H-3}`} strokeWidth="2"/>
+          <path d={`M ${W-cornerR-3} ${H-3} A ${cornerR} ${cornerR} 0 0 1 ${W-3} ${H-cornerR-3}`} strokeWidth="2"/>
+
+          {/* Linhas de substituição nas laterais (2 traços em cada lado) */}
+          {/* Lado esquerdo — ~10m = 200px do topo, e ~12m = 240px */}
+          <line x1="0" y1={H*0.45} x2="18" y2={H*0.45} strokeWidth="2"/>
+          <line x1="0" y1={H*0.55} x2="18" y2={H*0.55} strokeWidth="2"/>
+          {/* Lado direito */}
+          <line x1={W} y1={H*0.45} x2={W-18} y2={H*0.45} strokeWidth="2"/>
+          <line x1={W} y1={H*0.55} x2={W-18} y2={H*0.55} strokeWidth="2"/>
+
+          {/* Traves — linha pontilhada amarela no topo */}
+          <line x1={(W-3*20)/2} y1="3" x2={(W+3*20)/2} y2="3"
+            stroke="#ffd700" strokeWidth="4" strokeDasharray="7 5"/>
         </g>
 
-        {/* Traves: linha amarela pontilhada no topo */}
-        <line x1={(W-3*mx_)/2} y1="1.5" x2={(W+3*mx_)/2} y2="1.5"
-          stroke="#ffd700" strokeWidth="4" strokeDasharray="6 4"/>
-
         {/* Pontos */}
+        {/* Ponto de pênalti */}
         <circle cx={penX} cy={penY} r="5" fill="white"/>
-        <circle cx={penX} cy={pen2Y} r="3.5" fill="white" opacity="0.6"/>
+        {/* Segunda penalidade */}
+        <circle cx={penX} cy={pen2Y} r="4" fill="white" opacity="0.65"/>
 
-        {/* ── ZONAS ── */}
+        {/* ZONAS CLICÁVEIS */}
         {ZONES.map(z=>{
           const n=cnt[z.id]||0;
           const it=n/mx;
           const active=activeZone===z.id;
           const p=zp[z.id];
           return(
-            <g key={z.id} onClick={interactive?()=>onSelect(z.id):undefined}
+            <g key={z.id}
+               onClick={interactive?()=>onSelect(z.id):undefined}
                style={{cursor:interactive?'pointer':'default'}}>
               {it>0&&<rect x={p.x+1} y={p.y+1} width={cW-2} height={rH-2}
-                fill={heat} opacity={0.1+it*0.45} rx="2"/>}
-              {active&&<rect x={p.x+3} y={p.y+3} width={cW-6} height={rH-6}
-                fill="rgba(250,233,42,.2)" stroke="#fae92a" strokeWidth="2.5" rx="3"/>}
-              {/* hit area */}
+                fill={heat} opacity={0.1+it*0.45} rx="3"/>}
+              {active&&<rect x={p.x+4} y={p.y+4} width={cW-8} height={rH-8}
+                fill="rgba(250,233,42,.18)" stroke="#fae92a" strokeWidth="2.5" rx="4"/>}
               <rect x={p.x} y={p.y} width={cW} height={rH} fill="transparent"/>
-              {/* label */}
-              <text x={p.x+cW/2} y={p.y+rH/2-(n>0?7:2)}
-                fill={active?'#fae92a':'rgba(255,255,255,.85)'}
-                fontSize="13" fontWeight="700" textAnchor="middle" fontFamily="sans-serif">{z.id}</text>
-              {n>0&&<text x={p.x+cW/2} y={p.y+rH/2+14}
+              <text x={p.x+cW/2} y={p.y+rH/2-(n>0?8:2)}
+                fill={active?'#fae92a':'rgba(255,255,255,.9)'}
+                fontSize="14" fontWeight="700" textAnchor="middle"
+                fontFamily="sans-serif" letterSpacing="0.5">{z.id}</text>
+              {n>0&&<text x={p.x+cW/2} y={p.y+rH/2+16}
                 fill={active?'#fae92a':heat}
-                fontSize="16" fontWeight="800" textAnchor="middle" fontFamily="sans-serif">{n}</text>}
+                fontSize="18" fontWeight="800" textAnchor="middle"
+                fontFamily="sans-serif">{n}</text>}
             </g>
           );
         })}
 
-        {/* ── DIVISÓRIAS ── */}
-        <g stroke="rgba(255,255,255,.18)" strokeWidth="1" strokeDasharray="6 5">
+        {/* DIVISÓRIAS DAS ZONAS */}
+        <g stroke="rgba(255,255,255,.2)" strokeWidth="1" strokeDasharray="7 6">
           <line x1={cW}   y1="0" x2={cW}   y2={H}/>
           <line x1={cW*2} y1="0" x2={cW*2} y2={H}/>
           <line x1="0" y1={rH}   x2={W} y2={rH}/>
@@ -223,10 +259,10 @@ function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null, inte
         </g>
 
         {/* Labels orientação */}
-        <text x={W/2} y="15" fill="rgba(255,255,255,.45)"
-          fontSize="9" fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="2">GOL</text>
-        <text x={W/2} y={H-6} fill="rgba(255,255,255,.45)"
-          fontSize="9" fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="2">MEIO CAMPO</text>
+        <text x={W/2} y="20" fill="rgba(255,255,255,.5)" fontSize="10"
+          fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="3">GOL</text>
+        <text x={W/2} y={H-8} fill="rgba(255,255,255,.5)" fontSize="10"
+          fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="3">MEIO CAMPO</text>
       </svg>
     </div>
   );
@@ -280,19 +316,25 @@ function NumericToggle({value, onChange}){
   );
 }
 
-// ─── ScoreBoard — linha única compacta (como mockup) ─────────────────────────
+// ─── ScoreBoard — placar centralizado ────────────────────────────────────────
 function ScoreBoard({game, running, onToggleRun, onNextPeriod}){
   const isLow=game.clock<120;
   return(
     <div className="scoreboard-bar">
+      {/* Time A */}
       <span className="sb-name-inline">{game.teams[0].name}</span>
       <span className="sb-score-inline" style={{color:game.myTeam===0?'var(--accent)':'var(--text)'}}>{game.teams[0].score}</span>
-      <span className="sb-sep">×</span>
+
+      {/* Centro: play + tempo + próximo período — centralizado */}
+      <div className="sb-center-block">
+        <button className={`sb-play${running?' playing':''}`} onClick={onToggleRun}>{running?'⏸':'▶'}</button>
+        <span className={`sb-clock-inline${isLow?' clock-low':''}`}>{fmtTime(game.clock)}</span>
+        <button className="sb-next" onClick={onNextPeriod} title="Próximo período">›T</button>
+      </div>
+
+      {/* Time B */}
       <span className="sb-score-inline" style={{color:game.myTeam===1?'var(--accent)':'var(--text)'}}>{game.teams[1].score}</span>
       <span className="sb-name-inline">{game.teams[1].name}</span>
-      <button className={`sb-play${running?' playing':''}`} onClick={onToggleRun}>{running?'⏸':'▶'}</button>
-      <span className={`sb-clock-inline${isLow?' clock-low':''}`}>{fmtTime(game.clock)}</span>
-      <button className="sb-next" onClick={onNextPeriod} title="Próximo período">›T</button>
     </div>
   );
 }
