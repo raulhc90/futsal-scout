@@ -100,52 +100,58 @@ function exportZoneCSV(game){
   dl(lines.join('\n'),`futsal_zonas_${d.replace(/\//g,'-')}.csv`);
 }
 
-// ─── ZoneMap — meia quadra FIFA com zonas 3x3 sobrepostas ───────────────────
-// SVG 300x280 landscape — orientação: meio campo no TOPO, gol na PARTE INFERIOR
-// Zonas: Z1/Z2/Z3 = terço defensivo (topo), Z4/Z5/Z6 = meio, Z7/Z8/Z9 = ofensivo (gol)
+// ─── ZoneMap — meia quadra FIFA ─────────────────────────────────────────────
+// Quadra FIFA futsal: 40×20m | SVG 300×260 landscape (width=300, height=260)
+// Orientação: meio campo no TOPO, gol na PARTE INFERIOR
+// Proporção: 1m ≈ 13px (largura), 1m ≈ 13px (altura) → metade = 20×20m
 function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null, interactive=true}){
   const W=300, H=260;
   const colW=W/3, rowH=H/3;
 
-  // Contagem por zona para heatmap
   const zoneCounts={};
   ZONES.forEach(z=>{
-    const filtered=highlightType?events.filter(e=>e.zone===z.id&&e.type===highlightType):events.filter(e=>e.zone===z.id);
+    const filtered=highlightType
+      ?events.filter(e=>e.zone===z.id&&e.type===highlightType)
+      :events.filter(e=>e.zone===z.id);
     zoneCounts[z.id]=filtered.length;
   });
   const maxCount=Math.max(...Object.values(zoneCounts),1);
   const typeColor={fin:'#22c55e',perda:'#ef4444',recup:'#3b82f6',falta:'#f59e0b'};
   const heatColor=highlightType?typeColor[highlightType]:'#fae92a';
 
-  // Posição de cada zona
   const zonePos={
     Z1:{x:0,y:0},Z2:{x:colW,y:0},Z3:{x:colW*2,y:0},
     Z4:{x:0,y:rowH},Z5:{x:colW,y:rowH},Z6:{x:colW*2,y:rowH},
     Z7:{x:0,y:rowH*2},Z8:{x:colW,y:rowH*2},Z9:{x:colW*2,y:rowH*2},
   };
 
-  // Dimensões das marcações FIFA (proporcionais ao SVG)
-  // Quadra real: 40x20m → metade = 20x20m
-  // Escala: W=300px = 20m → 1m = 15px; H=260px = 20m (aprox)
-  const scaleX = W/20, scaleY = H/20;
-  // Área do goleiro: 6x3m → 90x45px, centrada
-  const gkW = 6*scaleX, gkH = 3*scaleY;
-  const gkX = (W-gkW)/2;
-  const gkY = H - gkH - 2;
-  // Ponto de pênalti: 6m da linha de fundo → H-90
-  const penY = H - 6*scaleY;
-  const penX = W/2;
-  // Segunda penalidade: 10m → H-150
-  const pen2Y = H - 10*scaleY;
-  // Raio do arco de pênalti: 6m = 90px
-  const arcR = 6*scaleX;
-  // Traves: 3m largura centradas
-  const traveW = 3*scaleX;
-  const traveX1 = (W-traveW)/2;
-  // Linha de meio campo (topo)
-  const midLineY = 2;
-  // Círculo central de meio campo (apenas metade)
-  const circR = 3*scaleX; // 3m de raio
+  // FIFA: quadra 40×20m, metade = 20×20m
+  // Escala: W=300 → 20m → 1m=15px; H=260 → 20m → 1m=13px
+  const mX=W/20, mY=H/20;
+
+  // Área do goleiro: 6×3m, centrada na linha de fundo
+  const gkW=6*mX, gkH=3*mY;
+  const gkX=(W-gkW)/2, gkY=H-gkH;
+
+  // Arco de grande área: raio 6m do ponto de pênalti
+  const arcR=6*mX;
+  // Ponto de pênalti: 6m da linha de fundo
+  const penX=W/2, penY=H-6*mY;
+  // Segunda penalidade: 10m da linha de fundo
+  const pen2Y=H-10*mY;
+
+  // Traves: 3m centradas
+  const traveW=3*mX;
+  const traveX=( W-traveW)/2;
+
+  // Arco de meio campo: raio 3m, apenas metade inferior (dentro da meia quadra)
+  const circR=3*mX;
+
+  // Calcular onde o arco de grande área intercepta Y=gkY para o arco
+  // O centro do arco está no ponto de pênalti (penX, penY)
+  // dx do arco nos extremos da área do goleiro
+  const arcDx=Math.sqrt(Math.max(0,arcR*arcR-(penY-gkY)*(penY-gkY)));
+  const arcStartX=penX-arcDx, arcEndX=penX+arcDx;
 
   return(
     <div className="zone-map">
@@ -153,103 +159,94 @@ function ZoneMap({events=[], onSelect, activeZone=null, highlightType=null, inte
         style={{width:'100%',maxWidth:`${W}px`,display:'block',
           cursor:interactive?'pointer':'default'}}>
 
-        {/* ── FUNDO ── */}
+        {/* FUNDO */}
         <rect width={W} height={H} fill="#1565c0" rx="3"/>
 
-        {/* ── MARCAÇÕES BRANCAS DA QUADRA ── */}
-        <g stroke="white" strokeWidth="2" fill="none">
+        {/* ÁREA DO GOLEIRO — preenchimento laranja */}
+        <rect x={gkX} y={gkY} width={gkW} height={gkH+2} fill="#e65100" opacity="0.9"/>
+
+        {/* ARCO DE GRANDE ÁREA — preenchimento laranja */}
+        <path
+          d={`M ${arcStartX} ${gkY} A ${arcR} ${arcR} 0 0 0 ${arcEndX} ${gkY}`}
+          fill="#e65100" opacity="0.9"/>
+
+        {/* MARCAÇÕES BRANCAS */}
+        <g stroke="white" strokeWidth="2" fill="none" strokeLinecap="round">
           {/* Borda da meia quadra */}
           <rect x="2" y="2" width={W-4} height={H-4} rx="2"/>
-
           {/* Linha de meio campo (topo) */}
-          <line x1="2" y1={midLineY} x2={W-2} y2={midLineY}/>
-
-          {/* Semicírculo de meio campo (metade inferior do círculo central) */}
-          <path d={`M ${W/2-circR} ${midLineY} A ${circR} ${circR} 0 0 0 ${W/2+circR} ${midLineY}`}/>
-
-          {/* Área do goleiro (retângulo) */}
-          <rect x={gkX} y={gkY} width={gkW} height={gkH+2}/>
-
-          {/* Arco de pênalti (semicírculo acima da área) */}
-          <path d={`M ${penX-arcR} ${gkY} A ${arcR} ${arcR} 0 0 1 ${penX+arcR} ${gkY}`}/>
-
+          <line x1="2" y1="2" x2={W-2} y2="2"/>
+          {/* Semicírculo de meio campo — metade inferior */}
+          <path d={`M ${W/2-circR} 2 A ${circR} ${circR} 0 0 0 ${W/2+circR} 2`}/>
+          {/* Área do goleiro */}
+          <rect x={gkX} y={gkY} width={gkW} height={gkH}/>
+          {/* Arco de grande área (apenas parte acima da área do goleiro) */}
+          <path d={`M ${arcStartX} ${gkY} A ${arcR} ${arcR} 0 0 0 ${arcEndX} ${gkY}`}/>
           {/* Linha de fundo */}
           <line x1="2" y1={H-2} x2={W-2} y2={H-2}/>
-
-          {/* Traves */}
-          <rect x={traveX1} y={H-5} width={traveW} height={7} rx="1.5" fill="white" stroke="white" strokeWidth="1"/>
-
-          {/* Marcas de canto (quartos de círculo) */}
-          <path d={`M 2 ${H*0.07} A ${H*0.06} ${H*0.06} 0 0 1 ${W*0.06} ${H-2}`} opacity="0"/>
-          {/* cantos simplificados */}
+          {/* Linhas laterais reforçadas */}
+          <line x1="2" y1="2" x2="2" y2={H-2}/>
+          <line x1={W-2} y1="2" x2={W-2} y2={H-2}/>
+          {/* Cantos arredondados (raio 1m≈13px) */}
           <path d={`M 2 ${H-14} Q 2 ${H-2} 14 ${H-2}`}/>
           <path d={`M ${W-14} ${H-2} Q ${W-2} ${H-2} ${W-2} ${H-14}`}/>
           <path d={`M 2 14 Q 2 2 14 2`}/>
           <path d={`M ${W-14} 2 Q ${W-2} 2 ${W-2} 14`}/>
+          {/* Traves */}
+          <rect x={traveX} y={H-4} width={traveW} height={6} rx="1" fill="white" stroke="none"/>
+          <line x1={traveX} y1={H-4} x2={traveX} y2={H+2} strokeWidth="3"/>
+          <line x1={traveX+traveW} y1={H-4} x2={traveX+traveW} y2={H+2} strokeWidth="3"/>
         </g>
 
-        {/* ── ÁREA DO GOLEIRO preenchida (laranja) ── */}
-        <path d={`M ${gkX} ${gkY} A ${arcR} ${arcR} 0 0 1 ${gkX+gkW} ${gkY} L ${gkX+gkW} ${H-2} L ${gkX} ${H-2} Z`}
-          fill="#e65100" opacity="0.85"/>
-        {/* Borda da área */}
-        <g stroke="white" strokeWidth="2" fill="none">
-          <path d={`M ${penX-arcR} ${gkY} A ${arcR} ${arcR} 0 0 1 ${penX+arcR} ${gkY}`}/>
-          <line x1={gkX} y1={gkY} x2={gkX} y2={H-2}/>
-          <line x1={gkX+gkW} y1={gkY} x2={gkX+gkW} y2={H-2}/>
-        </g>
-
-        {/* ── PONTOS ── */}
-        {/* Ponto de pênalti */}
+        {/* PONTOS */}
         <circle cx={penX} cy={penY} r="4" fill="white"/>
-        {/* Segunda penalidade */}
-        <circle cx={penX} cy={pen2Y} r="3" fill="white" opacity="0.7"/>
+        <circle cx={penX} cy={pen2Y} r="3" fill="white" opacity="0.65"/>
 
-        {/* ── ZONAS CLICÁVEIS (overlay semitransparente) ── */}
+        {/* ZONAS CLICÁVEIS */}
         {ZONES.map(z=>{
           const count=zoneCounts[z.id]||0;
           const intensity=count/maxCount;
           const isActive=activeZone===z.id;
           const pos=zonePos[z.id];
           return(
-            <g key={z.id} onClick={interactive?()=>onSelect(z.id):undefined}
+            <g key={z.id}
+              onClick={interactive?()=>onSelect(z.id):undefined}
               style={{cursor:interactive?'pointer':'default'}}>
-              {/* Heat overlay */}
               {intensity>0&&(
                 <rect x={pos.x+1} y={pos.y+1} width={colW-2} height={rowH-2}
-                  fill={heatColor} opacity={0.1+intensity*0.4} rx="3"/>
+                  fill={heatColor} opacity={0.1+intensity*0.42} rx="3"/>
               )}
-              {/* Borda ativa */}
               {isActive&&(
                 <rect x={pos.x+2} y={pos.y+2} width={colW-4} height={rowH-4}
-                  fill="rgba(250,233,42,0.2)" stroke="#fae92a" strokeWidth="2.5" rx="3"/>
+                  fill="rgba(250,233,42,0.22)" stroke="#fae92a" strokeWidth="2.5" rx="3"/>
               )}
-              {/* Hit area */}
               <rect x={pos.x} y={pos.y} width={colW} height={rowH} fill="transparent"/>
-              {/* Label */}
-              <text x={pos.x+colW/2} y={pos.y+rowH/2-5}
-                fill={isActive?'#fae92a':'rgba(255,255,255,0.75)'}
-                fontSize="11" fontWeight="700" textAnchor="middle" fontFamily="sans-serif">{z.id}</text>
+              <text x={pos.x+colW/2} y={pos.y+rowH/2-(count>0?6:2)}
+                fill={isActive?'#fae92a':'rgba(255,255,255,0.8)'}
+                fontSize="11" fontWeight="700" textAnchor="middle"
+                fontFamily="sans-serif">{z.id}</text>
               {count>0&&(
                 <text x={pos.x+colW/2} y={pos.y+rowH/2+11}
                   fill={isActive?'#fae92a':heatColor}
-                  fontSize="14" fontWeight="800" textAnchor="middle" fontFamily="sans-serif">{count}</text>
+                  fontSize="14" fontWeight="800" textAnchor="middle"
+                  fontFamily="sans-serif">{count}</text>
               )}
             </g>
           );
         })}
 
-        {/* ── DIVISÓRIAS DAS ZONAS (linhas pontilhadas) ── */}
-        <g stroke="rgba(255,255,255,0.2)" strokeWidth="1" strokeDasharray="5 4">
+        {/* DIVISÓRIAS DAS ZONAS */}
+        <g stroke="rgba(255,255,255,0.18)" strokeWidth="1" strokeDasharray="5 4">
           <line x1={colW} y1="2" x2={colW} y2={H-2}/>
           <line x1={colW*2} y1="2" x2={colW*2} y2={H-2}/>
           <line x1="2" y1={rowH} x2={W-2} y2={rowH}/>
           <line x1="2" y1={rowH*2} x2={W-2} y2={rowH*2}/>
         </g>
 
-        {/* ── LABELS ORIENTAÇÃO ── */}
-        <text x={W/2} y="14" fill="rgba(255,255,255,0.45)" fontSize="8"
+        {/* LABELS */}
+        <text x={W/2} y="14" fill="rgba(255,255,255,0.4)" fontSize="8"
           fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="1.5">MEIO CAMPO</text>
-        <text x={W/2} y={H-8} fill="rgba(255,255,255,0.45)" fontSize="8"
+        <text x={W/2} y={H-10} fill="rgba(255,255,255,0.4)" fontSize="8"
           fontWeight="700" textAnchor="middle" fontFamily="sans-serif" letterSpacing="1.5">GOL</text>
       </svg>
     </div>
@@ -346,6 +343,7 @@ function PeriodEndModal({quarter,scores,onContinue,onOvertime,onPenalties,onFini
 
 // ─── PlayerOverlay ────────────────────────────────────────────────────────────
 // Aparece após o resultado — seleção opcional rápida de jogador
+// eslint-disable-next-line no-unused-vars
 function PlayerOverlay({players, onSelect, onSkip}){
   const active=players.filter(p=>p.active);
   return(
@@ -622,98 +620,128 @@ function ScoutPanel({game, running, onAddEvent, onAddGoal, onAddGoalAdv, onUndo,
     return `${ev?.emoji||''} ${lastEvent.zone} ${res?.label||''}`;
   })():null;
 
+  const notRunning = !running;
+
   return(
     <div className="scout-panel">
-      {/* Coluna esquerda — eventos */}
-      <div className="scout-col scout-events">
-        {EVENTS.map(ev=>(
-          <button key={ev.id} className={`event-btn${pending?.type===ev.id?' selected':''}`}
-            style={{'--ec':ev.color}}
-            disabled={step!=='event'}
-            onClick={()=>onEvent(ev)}>
-            <span className="ev-emoji">{ev.emoji}</span>
-            <span className="ev-label">{ev.label}</span>
-          </button>
-        ))}
-        <button className="event-btn gol-adv-btn"
-          disabled={step!=='event'}
-          onClick={()=>onAddGoalAdv()}>
-          <span className="ev-emoji">🔴</span>
-          <span className="ev-label">Gol Adv</span>
-        </button>
-      </div>
 
-      {/* Coluna central — quadra SEMPRE visível */}
-      <div className="scout-col scout-zone-col">
-        <div className="scout-step-label">
-          {step==='event'&&'Quadra (3×3) — selecione um evento'}
-          {step==='zone'&&`${EVENTS.find(e=>e.id===pending?.type)?.label} — toque na zona`}
-          {step==='result'&&`${EVENTS.find(e=>e.id===pending?.type)?.label} em ${pending?.zone} — resultado`}
-          {step==='player'&&'Quem? (opcional)'}
+      {/* ── BARRA SUPERIOR: Eventos + step label + Resultado + Undo ── */}
+      <div className="scout-top-bar">
+        {/* Eventos */}
+        <div className="scout-events-row">
+          {EVENTS.map(ev=>(
+            <button key={ev.id} className={`event-btn-top${pending?.type===ev.id?' selected':''}`}
+              style={{'--ec':ev.color}}
+              disabled={step!=='event'||notRunning}
+              title={notRunning?'Inicie o cronômetro para registrar':''}
+              onClick={()=>onEvent(ev)}>
+              <span className="ev-emoji">{ev.emoji}</span>
+              <span className="ev-label">{ev.label}</span>
+            </button>
+          ))}
+          <button className="event-btn-top gol-adv-btn"
+            disabled={step!=='event'||notRunning}
+            onClick={()=>onAddGoalAdv()}>
+            <span className="ev-emoji">🔴</span>
+            <span className="ev-label">Gol Adv</span>
+          </button>
         </div>
 
-        {/* Quadra sempre renderizada */}
-        <ZoneMap
-          events={game.events}
-          onSelect={step==='zone'?onZone:()=>{}}
-          activeZone={pending?.zone}
-          highlightType={pending?.type}
-          interactive={step==='zone'}
-        />
+        {/* Divider */}
+        <div className="scout-top-divider"/>
 
-        {step==='player'&&(
-          <PlayerOverlay
-            players={myTeam.players}
-            onSelect={player=>onPlayer(player)}
-            onSkip={()=>onPlayer(null)}
-          />
-        )}
-
-        {step!=='event'&&(
-          <button className="cancel-flow-btn" onClick={reset}>✕ Cancelar</button>
-        )}
+        {/* Resultados dinâmicos */}
+        <div className="scout-results-row">
+          {step==='result'&&results.map(r=>(
+            <button key={r.id} className="result-btn-top"
+              style={{'--rc':r.color}}
+              onClick={()=>onResult(r.id)}>
+              {r.label}
+            </button>
+          ))}
+          {step!=='result'&&(
+            <div className="results-placeholder-top">
+              {notRunning
+                ? '▶ Inicie o cronômetro para registrar'
+                : step==='event' ? 'Selecione um evento →'
+                : step==='zone'  ? 'Toque na zona →'
+                : 'Selecione o jogador'}
+            </div>
+          )}
+          {/* Cancelar / Undo */}
+          <div className="scout-top-actions">
+            {step!=='event'&&<button className="cancel-sm-btn" onClick={reset}>✕</button>}
+            <button className="undo-sm-btn" onClick={onUndo} disabled={game.events.length===0}>↩</button>
+          </div>
+        </div>
       </div>
 
-      {/* Coluna direita — resultado + undo + última ação */}
-      <div className="scout-col scout-results">
-        {/* Botão undo sempre visível no topo da coluna */}
-        <button className="result-undo-btn" onClick={onUndo} disabled={game.events.length===0}>
-          ↩ Desfazer
-        </button>
-
-        {/* Última ação registrada */}
-        {lastLabel&&(
-          <div className="last-action-box">
-            <div className="last-action-label">Último</div>
-            <div className="last-action-val">{lastLabel}</div>
-            {lastEvent?.playerName&&<div className="last-action-player">{lastEvent.playerName}</div>}
+      {/* ── ÁREA PRINCIPAL: Jogadores esquerda + Quadra centro + Info direita ── */}
+      <div className="scout-main">
+        {/* Coluna esquerda — jogadores do meu time */}
+        <div className="scout-players-col">
+          <div className="scout-players-title">{myTeam.name}</div>
+          <div className="scout-players-grid">
+            {myTeam.players.map((p,pi)=>(
+              <div key={pi} className="scout-player-chip"
+                data-active={step==='player'}
+                onClick={step==='player'?()=>onPlayer(p):undefined}
+                style={{cursor:step==='player'?'pointer':'default'}}>
+                <span className="spc-num">#{p.number}</span>
+                <span className="spc-name">{p.name.split(' ')[0]}</span>
+                <span className="spc-pos">{(p.position||'').slice(0,3)}</span>
+              </div>
+            ))}
           </div>
-        )}
+          {step==='player'&&(
+            <button className="skip-player-btn" onClick={()=>onPlayer(null)}>Pular →</button>
+          )}
+        </div>
 
-        <div className="results-divider"/>
-
-        {/* Botões de resultado (dinâmicos) */}
-        {step==='result'&&results.map(r=>(
-          <button key={r.id} className="result-btn"
-            style={{'--rc':r.color}}
-            onClick={()=>onResult(r.id)}>
-            {r.label}
-          </button>
-        ))}
-
-        {(step==='event'||step==='zone')&&(
-          <div className="results-placeholder">
-            <span>Selecione</span>
-            <span>um evento</span>
+        {/* Coluna central — quadra */}
+        <div className="scout-court-col">
+          <div className="scout-step-label">
+            {notRunning&&<span style={{color:'var(--red)'}}>⏸ Cronômetro parado</span>}
+            {!notRunning&&step==='event'&&'Selecione um evento'}
+            {!notRunning&&step==='zone'&&`${EVENTS.find(e=>e.id===pending?.type)?.label} — toque na zona`}
+            {!notRunning&&step==='result'&&`${EVENTS.find(e=>e.id===pending?.type)?.label} em ${pending?.zone}`}
+            {!notRunning&&step==='player'&&'Clique no jogador (esquerda) ou pule'}
           </div>
-        )}
+          <ZoneMap
+            events={game.events}
+            onSelect={step==='zone'?onZone:()=>{}}
+            activeZone={pending?.zone}
+            highlightType={pending?.type}
+            interactive={step==='zone'&&!notRunning}
+          />
+        </div>
 
-        {step==='player'&&(
-          <div className="results-placeholder">
-            <span>Selecione</span>
-            <span>o jogador</span>
+        {/* Coluna direita — última ação + stats rápidos */}
+        <div className="scout-info-col">
+          <div className="scout-players-title">Último evento</div>
+          {lastLabel?(
+            <div className="last-action-box">
+              <div className="last-action-val">{lastLabel}</div>
+              {lastEvent?.time&&<div className="last-action-player">{lastEvent.quarter} · {lastEvent.time}</div>}
+              {lastEvent?.playerName&&<div className="last-action-player">{lastEvent.playerName}</div>}
+            </div>
+          ):(
+            <div style={{color:'var(--muted)',fontSize:'12px',padding:'8px 0'}}>Nenhum ainda</div>
+          )}
+          <div style={{marginTop:'8px',fontSize:'10px',color:'var(--muted)',fontWeight:700,letterSpacing:'.08em',textTransform:'uppercase'}}>Faltas coletivas</div>
+          <div className="foul-dots-row">
+            {[1,2,3,4,5,6].map(n=>{
+              const count=(game.teamFouls||[[],[]])[game.myTeam||0];
+              const q=game.quarter||0;
+              const qCount=Array.isArray(count)?count[q]||0:0;
+              return(
+                <span key={n} className="foul-dot-sm"
+                  data-filled={qCount>=n} data-bonus={n===6}/>
+              );
+            })}
           </div>
-        )}
+          <div style={{fontSize:'10px',color:'var(--muted)',marginTop:'2px'}}>{getQL(game.quarter)}</div>
+        </div>
       </div>
     </div>
   );
